@@ -55,6 +55,12 @@ export const SUPPORTED_LOCALES = {
 		countryCode: "br",
 		dir: "ltr",
 	},
+	uk: {
+		name: "Ukrainian",
+		nativeName: "Українська",
+		countryCode: "ua",
+		dir: "ltr",
+	},
 };
 
 /**

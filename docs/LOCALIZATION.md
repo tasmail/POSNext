@@ -24,6 +24,7 @@ POS Next supports the following languages out of the box:
 | English | en | Left-to-Right |
 | Arabic | ar | Right-to-Left |
 | Portuguese (Brazil) | pt-br | Left-to-Right |
+| Ukrainian | uk | Left-to-Right |
 
 ### Default Behavior
 

@@ -2278,10 +2278,13 @@ async function handlePaymentCompleted(paymentData) {
 				// Reset cart hash after successful payment
 				previousCartHash = "";
 
-				// PRRO: the answer of the submit carries the fiscal result (the server fiscalizes before it answers):
-				// the sale-complete dialog shows it at once, before the stock refresh and the print below.
+				// PRRO: the answer of the submit carries the fiscal result (the server fiscalizes before it answers).
+				// Where upstream shows the success dialog (no auto print) the dialog shows it at once, before the stock
+				// refresh below; where upstream only prints and shows a toast, the status is shown as toasts / the error
+				// dialog after the print (showUaPrroStatus).
 				const uaPrroBlock = getUaPrroBlock(result);
-				if (uaPrroBlock) {
+				const autoPrint = shiftStore.autoPrintEnabled || posSettingsStore.silentPrint;
+				if (uaPrroBlock && !autoPrint) {
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount, uaPrroBlock);
 				}
 
@@ -2291,14 +2294,21 @@ async function handlePaymentCompleted(paymentData) {
 				}
 
 				// Refresh stock - Direct API (50-200ms), no Socket.IO lag!
-				await stockStore.refresh(soldItemCodes, shiftStore.profileWarehouse);
+				if (uaPrroBlock) {
+					// The sale is complete and its dialog is open: a failing refresh must not add the error dialog.
+					await stockStore
+						.refresh(soldItemCodes, shiftStore.profileWarehouse)
+						.catch((err) => log.error("Stock refresh after the sale failed:", err));
+				} else {
+					await stockStore.refresh(soldItemCodes, shiftStore.profileWarehouse);
+				}
 
 				// Refresh invoice history cache in background (non-blocking)
 				loadInvoiceHistoryData().catch((err) =>
 					log.debug("Background invoice cache refresh failed:", err)
 				);
 
-				if (shiftStore.autoPrintEnabled || posSettingsStore.silentPrint) {
+				if (autoPrint) {
 					try {
 						await handlePrintInvoice({ name: invoiceName });
 						showSuccess(__("Invoice {0} created and sent to printer", [invoiceName]));
@@ -2306,8 +2316,9 @@ async function handlePaymentCompleted(paymentData) {
 						log.error("Auto-print error:", error);
 						showWarning(__("Invoice {0} created but print failed", [invoiceName]));
 					}
+					// PRRO: the change and the fiscal status of the sale (an error stays in the error dialog).
+					if (uaPrroBlock) showUaPrroStatus(result);
 				} else if (!uaPrroBlock) {
-					// With the PRRO block the dialog above is the message: no second "created" toast.
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}

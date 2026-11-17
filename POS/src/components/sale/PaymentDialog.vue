@@ -2028,7 +2028,7 @@ import {
 	roundCurrency,
 } from "@/utils/currency";
 import { getPaymentIcon } from "@/utils/payment";
-import { cashPayableTotal, getUaPrroCashStep } from "@/utils/uaPrro";
+import { cashPayableTotal, getUaPrroCashModes, getUaPrroCashStep } from "@/utils/uaPrro";
 import { offlineWorker } from "@/utils/offline/workerClient";
 import { logger } from "@/utils/logger";
 import { Dialog, createResource, call } from "frappe-ui";
@@ -2693,15 +2693,22 @@ const uaPrroCashStep = computed(() =>
 		: getUaPrroCashStep(props.posProfile)
 );
 
-// Cash only: the entries are all cash, or there are none yet and the selected method is cash.
+// Is this method cash for the rounding: the server's list of cash Modes of Payment when it sent one, else the
+// name/type heuristic of the dialog.
+function isUaPrroCashMethod(method) {
+	if (!method) return false;
+	const modes = getUaPrroCashModes(props.posProfile);
+	return modes ? modes.includes(method.mode_of_payment) : isCashPaymentMethod(method);
+}
+
+// Cash only: the selected method is cash and the entries are all cash. A card chosen after a cash entry makes the
+// sale mixed at once (the rest is paid by the card in the exact amount, no change on a card).
 const isCashOnlySale = computed(() => {
-	if (paymentEntries.value.length === 0) {
-		return Boolean(lastSelectedMethod.value) && isCashPaymentMethod(lastSelectedMethod.value);
-	}
+	if (!lastSelectedMethod.value || !isUaPrroCashMethod(lastSelectedMethod.value)) return false;
 	return paymentEntries.value.every((entry) => {
 		if (entry.is_customer_credit || entry.is_wallet_payment) return false;
 		const method = paymentMethods.value.find((m) => m.mode_of_payment === entry.mode_of_payment);
-		return isCashPaymentMethod(method);
+		return isUaPrroCashMethod(method);
 	});
 });
 

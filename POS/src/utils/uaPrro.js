@@ -12,7 +12,7 @@
  * by the app, POS Next shows the exact total)
  *
  *
- * Profile data: `get_pos_profile_data` answers with `ua_prro: { auto: true, cash_step: "0.10" | "0.50" }` for a
+ * Profile data: `get_pos_profile_data` answers with `ua_prro: { auto: true, cash_step: "0.10" | "0.50", cash_modes: [...] }` for a
  * profile with automatic fiscalization (and with nothing for any other profile). The payment dialog uses it to show the
  * cash total as the app rounds it (see roundCash) and the change computed from it before the sale is completed.
  *
@@ -176,7 +176,11 @@ export function setUaPrroConfig(profile, block) {
 	if (!profile) return
 	const next = { ...profileConfig.value }
 	if (block && block.auto === true && CASH_STEPS[block.cash_step]) {
-		next[profile] = { auto: true, cashStep: block.cash_step }
+		// cash_modes: the Modes of Payment whose PRRO Payment Form is cash (the server's rule); absent: unknown.
+		const modes = Array.isArray(block.cash_modes)
+			? block.cash_modes.filter((mode) => typeof mode === "string")
+			: null
+		next[profile] = { auto: true, cashStep: block.cash_step, cashModes: modes }
 	} else {
 		delete next[profile]
 	}
@@ -186,6 +190,11 @@ export function setUaPrroConfig(profile, block) {
 /** The cash rounding step ("0.10" | "0.50") of an automatic profile, or null. Reactive. */
 export function getUaPrroCashStep(profile) {
 	return profileConfig.value[profile]?.cashStep || null
+}
+
+/** The Modes of Payment that the server treats as cash for an automatic profile, or null when it did not say. */
+export function getUaPrroCashModes(profile) {
+	return profileConfig.value[profile]?.cashModes || null
 }
 
 /**

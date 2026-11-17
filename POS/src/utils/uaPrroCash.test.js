@@ -15,6 +15,7 @@ vi.mock("@/utils/errorHandler", () => ({
 const {
 	cashPayableTotal,
 	describeSale,
+	getUaPrroCashModes,
 	getUaPrroCashStep,
 	mergeRetriedBlock,
 	roundCash,
@@ -75,8 +76,9 @@ describe.skipIf(!process.env.UA_PRRO_CASH_CONTRACT)("contract with the Python ro
 	it("gives the same amount for every kopeck at both steps", () => {
 		const rows = JSON.parse(readFileSync(process.env.UA_PRRO_CASH_CONTRACT, "utf8"))
 		expect(rows.length).toBe(2 * 40001)
+		// Object.is: a -0 would be a difference (the grid writes a negative zero as "0.00").
 		const wrong = rows.filter(
-			(row) => roundCash(row.value, row.step) !== Number(row.expected),
+			(row) => !Object.is(roundCash(row.value, row.step), Number(row.expected)),
 		)
 		expect(wrong.slice(0, 5)).toEqual([])
 	})
@@ -107,6 +109,16 @@ describe("the profile configuration", () => {
 		}
 		expect(getUaPrroCashStep("Never Seen")).toBeNull()
 		expect(getUaPrroCashStep(undefined)).toBeNull()
+	})
+})
+
+describe("the cash modes of the profile", () => {
+	it("are kept when the server sends a list, else unknown", () => {
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.10", cash_modes: ["Cash", 5] })
+		expect(getUaPrroCashModes("Shop")).toEqual(["Cash"])
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.10" })
+		expect(getUaPrroCashModes("Shop")).toBeNull()
+		expect(getUaPrroCashModes("Never Seen")).toBeNull()
 	})
 })
 

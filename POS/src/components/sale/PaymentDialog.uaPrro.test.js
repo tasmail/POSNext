@@ -9,10 +9,15 @@ import { defineComponent, h } from "vue"
 const translate = (text, args = []) =>
 	text.replace(/\{(\d+)\}/g, (_m, i) => String(args[Number(i)]))
 
+const setUaPrroCashSet = (profile, modes) =>
+	setUaPrroConfig(profile, { auto: true, cash_step: "0.10", cash_modes: modes })
+
 const METHODS = [
 	{ mode_of_payment: "Cash", default: 1, type: "Cash", account_type: "Cash" },
 	{ mode_of_payment: "Card", default: 0, type: "Bank", account_type: "Bank" },
 ]
+
+const ORIGINAL_METHODS = [...METHODS]
 
 vi.mock("frappe-ui", () => {
 	const passthrough = (name) =>
@@ -138,6 +143,51 @@ describe("PaymentDialog with the cash rounding of an automatic PRRO profile", ()
 		wrapper.vm.paymentEntries = [{ mode_of_payment: "Card", amount: 12.35, type: "Bank" }]
 		await wrapper.vm.$nextTick()
 		expect(text(wrapper)).toContain("Fully Paid")
+	})
+
+	it("is a mixed sale, at the exact total, once a card is chosen after a cash entry", async () => {
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.10" })
+		const wrapper = await open()
+		wrapper.vm.paymentEntries = [{ mode_of_payment: "Cash", amount: 5, type: "Cash" }]
+		wrapper.vm.lastSelectedMethod = METHODS[1]
+		await wrapper.vm.$nextTick()
+		expect(wrapper.find('[data-testid="ua-prro-cash-total"]').exists()).toBe(false)
+		expect(text(wrapper)).toMatch(/Remaining\s*\S*\s*7\.35/)
+		wrapper.vm.paymentEntries = [
+			{ mode_of_payment: "Cash", amount: 5, type: "Cash" },
+			{ mode_of_payment: "Card", amount: 7.35, type: "Bank" },
+		]
+		await wrapper.vm.$nextTick()
+		expect(text(wrapper)).toContain("Fully Paid")
+		expect(text(wrapper)).not.toContain("Change Due")
+		wrapper.vm.completePayment()
+		const [[paid]] = wrapper.emitted("payment-completed")
+		expect(paid).toMatchObject({ paid_amount: 12.35, change_amount: 0, is_partial_payment: false })
+	})
+
+	it("takes the cash modes of the server instead of the name heuristic", async () => {
+		// "Готівка" has no "cash" in its name or type: only the server's list makes it cash.
+		const methods = [
+			{ mode_of_payment: "Готівка", default: 1, type: "General", account_type: "" },
+			{ mode_of_payment: "Cash Card", default: 0, type: "Bank", account_type: "Bank" },
+		]
+		METHODS.splice(0, METHODS.length, ...methods)
+		try {
+			setUaPrroCashSet("Shop", ["Готівка"])
+			const wrapper = await open()
+			expect(wrapper.get('[data-testid="ua-prro-cash-total"]').text()).toMatch(/12\.40/)
+			// The name "Cash Card" would pass the heuristic but the server does not call it cash.
+			wrapper.vm.lastSelectedMethod = methods[1]
+			await wrapper.vm.$nextTick()
+			expect(wrapper.find('[data-testid="ua-prro-cash-total"]').exists()).toBe(false)
+			// Without the list the heuristic decides: "Cash Card" is cash, "Готівка" is not.
+			setUaPrroConfig("Shop", { auto: true, cash_step: "0.10" })
+			wrapper.vm.lastSelectedMethod = methods[0]
+			await wrapper.vm.$nextTick()
+			expect(wrapper.find('[data-testid="ua-prro-cash-total"]').exists()).toBe(false)
+		} finally {
+			METHODS.splice(0, METHODS.length, ...ORIGINAL_METHODS)
+		}
 	})
 
 	it("changes nothing for a profile without automatic fiscalization", async () => {

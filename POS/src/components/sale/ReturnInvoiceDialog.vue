@@ -1029,6 +1029,19 @@
 								formatCurrency(summaryRefundAmount)
 							}}</span>
 						</div>
+						<!-- PRRO (ua_prro): the cash refund as the receipt will have it -->
+						<div
+							v-if="uaPrroRefundCash !== null"
+							class="flex justify-between items-center"
+							data-testid="ua-prro-cash-refund"
+						>
+							<span class="text-sm font-semibold text-gray-700">{{
+								__("Cash to hand back (rounded to {0})", [uaPrroCashStep])
+							}}</span>
+							<span class="text-lg font-bold text-red-600">{{
+								formatCurrency(uaPrroRefundCash)
+							}}</span>
+						</div>
 					</div>
 				</div>
 
@@ -1182,6 +1195,7 @@
 import { useOfflineStatus } from "@/composables/useOfflineStatus";
 import { useToast } from "@/composables/useToast";
 import { getPaymentIcon } from "@/utils/payment";
+import { getUaPrroCashStep, roundCash } from "@/utils/uaPrro";
 import {
 	DEFAULT_CURRENCY,
 	DEFAULT_LOCALE,
@@ -1646,6 +1660,27 @@ const isRTL = document.documentElement.dir === "rtl";
 const paymentSelectStyle = {
 	backgroundPosition: isRTL ? "left 12px center" : "right 12px center",
 };
+
+// PRRO (ua_prro): a cash refund of an automatic profile is rounded by the app like a cash sale (half away from zero).
+// The receipt of the return has the amount below; the payment rows stay as the dialog has them and the server
+// puts the rounded amount into the return. null: nothing differs.
+const uaPrroCashStep = computed(() => getUaPrroCashStep(props.posProfile));
+const uaPrroRefundCash = computed(() => {
+	const step = uaPrroCashStep.value;
+	if (!step || addToCustomerCredit.value || isOriginalCreditSale.value || isPartiallyPaid.value) {
+		return null;
+	}
+	if (refundPayments.value.length !== 1 || returnTotal.value <= 0) return null;
+	const method = paymentMethods.value.find(
+		(m) => m.mode_of_payment === refundPayments.value[0].mode_of_payment
+	);
+	const isCash =
+		(method?.account_type || "").toLowerCase() === "cash" ||
+		(method?.type || "").toLowerCase() === "cash";
+	if (!isCash) return null;
+	const rounded = roundCash(returnTotal.value, step);
+	return rounded === returnTotal.value ? null : rounded;
+});
 
 const canCreateReturn = computed(() => {
 	const hasSelectedItems = selectedItems.value.length > 0;

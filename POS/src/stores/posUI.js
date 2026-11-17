@@ -43,6 +43,8 @@ export const usePOSUIStore = defineStore("posUI", () => {
 	const lastInvoiceName = ref("");
 	const lastInvoiceTotal = ref(0);
 	const lastPaidAmount = ref(0);
+	/** Block `ua_prro` of the sale (fiscal status, change to hand over), or null (see utils/uaPrro.js) */
+	const lastUaPrro = ref(null);
 	/** Full receipt payload for invoices not yet on the server (offline queue) */
 	const lastOfflinePrintDoc = ref(null);
 
@@ -91,7 +93,8 @@ export const usePOSUIStore = defineStore("posUI", () => {
 		showErrorDialog.value = false;
 	}
 
-	function showSuccess(invoiceName, total, paidAmount = null) {
+	function showSuccess(invoiceName, total, paidAmount = null, uaPrro = null) {
+		lastUaPrro.value = uaPrro;
 		lastInvoiceName.value = invoiceName;
 		lastInvoiceTotal.value = total;
 		lastPaidAmount.value = paidAmount !== null ? paidAmount : total;
@@ -193,6 +196,7 @@ export const usePOSUIStore = defineStore("posUI", () => {
 		lastInvoiceName,
 		lastInvoiceTotal,
 		lastPaidAmount,
+		lastUaPrro,
 		lastOfflinePrintDoc,
 		initialCustomerName,
 		mobileActiveTab,

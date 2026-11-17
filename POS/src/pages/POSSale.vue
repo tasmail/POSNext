@@ -900,6 +900,13 @@
 						<p class="mt-2 text-sm text-gray-500">
 							{{ __("Paid: {0}", [formatCurrency(uiStore.lastPaidAmount)]) }}
 						</p>
+						<!-- PRRO (ua_prro): the change to hand over and the fiscal result of the sale -->
+						<UaPrroSaleStatus
+							:block="uiStore.lastUaPrro"
+							:currency="shiftStore.profileCurrency"
+							:retrying="uaPrroRetrying"
+							@retry="handleUaPrroRetry"
+						/>
 					</div>
 				</template>
 				<template #actions>
@@ -1021,6 +1028,7 @@ import ItemsSelector from "@/components/sale/ItemsSelector.vue";
 import OffersDialog from "@/components/sale/OffersDialog.vue";
 import OfflineInvoicesDialog from "@/components/sale/OfflineInvoicesDialog.vue";
 import PaymentDialog from "@/components/sale/PaymentDialog.vue";
+import UaPrroSaleStatus from "@/components/sale/UaPrroSaleStatus.vue";
 import PromotionManagement from "@/components/sale/PromotionManagement.vue";
 import ReturnInvoiceDialog from "@/components/sale/ReturnInvoiceDialog.vue";
 import WarehouseAvailabilityDialog from "@/components/sale/WarehouseAvailabilityDialog.vue";
@@ -1055,6 +1063,7 @@ import {
 	describeUaPrro,
 	fiscalizeAgain,
 	getUaPrroBlock,
+	mergeRetriedBlock,
 } from "@/utils/uaPrro";
 
 import { useCustomerSearchStore } from "@/stores/customerSearch";
@@ -2028,6 +2037,35 @@ function showUaPrroStatus(result) {
 	}
 }
 
+// PRRO: "Fiscalize again" inside the sale-complete dialog; the answer replaces the block in place.
+const uaPrroRetrying = ref(false);
+async function handleUaPrroRetry() {
+	const previous = uiStore.lastUaPrro;
+	if (!previous || uaPrroRetrying.value) return;
+	uaPrroRetrying.value = true;
+	try {
+		const fresh = await fiscalizeAgain(call, previous.sales_invoice);
+		uiStore.lastUaPrro = mergeRetriedBlock(previous, fresh);
+	} finally {
+		uaPrroRetrying.value = false;
+	}
+}
+
+// PRRO: a sale that is still not fiscalized when the dialog is closed is not forgotten silently.
+watch(
+	() => uiStore.showSuccessDialog,
+	(open) => {
+		const block = uiStore.lastUaPrro;
+		if (!open && block && !block.ok) {
+			showWarning(
+				__("The sale {0} is not fiscalized: use Fiscalize on the invoice.", [
+					block.sales_invoice,
+				])
+			);
+		}
+	}
+);
+
 async function handleErrorRetry() {
 	const retryAction = uiStore.errorRetryAction;
 	const retryData = uiStore.errorRetryActionData;
@@ -2240,6 +2278,13 @@ async function handlePaymentCompleted(paymentData) {
 				// Reset cart hash after successful payment
 				previousCartHash = "";
 
+				// PRRO: the answer of the submit carries the fiscal result (the server fiscalizes before it answers):
+				// the sale-complete dialog shows it at once, before the stock refresh and the print below.
+				const uaPrroBlock = getUaPrroBlock(result);
+				if (uaPrroBlock) {
+					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount, uaPrroBlock);
+				}
+
 				// Delete draft after successful submission
 				if (draftIdToDelete) {
 					draftsStore.deleteDraft(draftIdToDelete);
@@ -2261,13 +2306,11 @@ async function handlePaymentCompleted(paymentData) {
 						log.error("Auto-print error:", error);
 						showWarning(__("Invoice {0} created but print failed", [invoiceName]));
 					}
-				} else {
+				} else if (!uaPrroBlock) {
+					// With the PRRO block the dialog above is the message: no second "created" toast.
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}
-
-				// PRRO: the receipt was sent after the submit; a failure is not an error of the call.
-				showUaPrroStatus(result);
 			}
 		}
 	} catch (error) {

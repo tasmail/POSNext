@@ -25,6 +25,7 @@ const accepted = {
 		rounded_total: 12.4,
 		paid_amount: 20,
 		change_amount: 7.6,
+		screen_change: 7.65,
 	},
 }
 
@@ -44,24 +45,39 @@ describe("describeUaPrro", () => {
 	it("shows nothing without a block", () => {
 		expect(describeUaPrro(null)).toBeNull()
 	})
-	it("tells the cashier the receipt total and the change of a cash sale", () => {
+	it("puts the change to hand over first and says what the payment screen shows", () => {
 		const view = describeUaPrro(accepted)
 		expect(view.level).toBe("ok")
-		expect(view.message).toBe(
-			"Fiscal receipt registered. 4000.12.3. Receipt total 12.40, change 7.60",
+		expect(view.message).toBe("Fiscal receipt registered. 4000.12.3")
+		expect(view.change).toBe(
+			"Change to hand over: 7.60 (the payment screen says 7.65). Receipt total 12.40",
 		)
 	})
-	it("does not repeat the amounts when POS Next showed the same", () => {
+	it("has the receipt total for an exact tender that was rounded", () => {
 		const view = describeUaPrro({
 			...accepted,
 			cash: {
-				grand_total: 12.4,
-				rounded_total: 12.4,
-				paid_amount: 12.4,
 				change_amount: 0,
+				screen_change: 0,
+				rounded_total: 12.4,
+				grand_total: 12.35,
+				paid_amount: 12.4,
 			},
 		})
-		expect(view.message).toBe("Fiscal receipt registered. 4000.12.3")
+		expect(view.change).toBe("Change to hand over: 0.00. Receipt total 12.40")
+	})
+	it("has no change line when POS Next showed the same", () => {
+		const view = describeUaPrro({
+			...accepted,
+			cash: {
+				change_amount: 0,
+				screen_change: 0,
+				rounded_total: 12.4,
+				grand_total: 12.4,
+				paid_amount: 12.4,
+			},
+		})
+		expect(view.change).toBe("")
 	})
 	it("is an error with a retry for a rejected receipt, and says the sale is saved", () => {
 		const view = describeUaPrro({
@@ -105,14 +121,12 @@ describe("describeUaPrro", () => {
 
 describe("fiscalizeAgain", () => {
 	it("turns the answer of the endpoint into a block", async () => {
-		const call = vi
-			.fn()
-			.mockResolvedValue({
-				status: "Accepted",
-				document: "PRRO-1",
-				fiscal_number: "9",
-				message: "",
-			})
+		const call = vi.fn().mockResolvedValue({
+			status: "Accepted",
+			document: "PRRO-1",
+			fiscal_number: "9",
+			message: "",
+		})
 		const block = await fiscalizeAgain(call, "SINV-1")
 		expect(call).toHaveBeenCalledWith(
 			"ua_prro.prro.api.fiscalize_sales_invoice",

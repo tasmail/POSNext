@@ -45,19 +45,24 @@ export function describeUaPrro(block) {
 		const parts = [__("Fiscal receipt registered")]
 		if (block.fiscal_number) parts.push(block.fiscal_number)
 		const cash = block.cash
-		// POS Next shows the exact total and the change computed from it: tell the cashier what the receipt has.
+		let change = ""
+		// POS Next shows the exact total and the change computed from it: the cashier hands over the change of the
+		// receipt, which comes first and is shown on its own.
 		if (
 			cash &&
 			(cash.rounded_total !== cash.grand_total || cash.change_amount)
 		) {
-			parts.push(
-				__("Receipt total {0}, change {1}", [
-					money(cash.rounded_total),
-					money(cash.change_amount),
-				]),
-			)
+			const screen =
+				cash.screen_change && cash.screen_change !== cash.change_amount
+					? __(" (the payment screen says {0})", [money(cash.screen_change)])
+					: ""
+			change = __("Change to hand over: {0}{1}. Receipt total {2}", [
+				money(cash.change_amount),
+				screen,
+				money(cash.rounded_total),
+			])
 		}
-		return { level: "ok", message: parts.join(". "), invoice }
+		return { level: "ok", message: parts.join(". "), change, invoice }
 	}
 	const retry = Boolean(block.can_retry)
 	const hint =

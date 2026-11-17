@@ -1106,7 +1106,7 @@ const {
 } = usePOSEvents();
 
 // Initialize toast
-const { showSuccess, showError, showWarning } = useToast();
+const { showSuccess, showError, showWarning, showInfo } = useToast();
 
 // Initialize logger
 const log = logger.create("POSSale");
@@ -2020,8 +2020,10 @@ function showUaPrroStatus(result) {
 			{ invoice: view.invoice }
 		);
 	} else if (view.level === "info") {
-		showWarning(view.message);
+		showInfo(view.message);
 	} else {
+		// The change to hand over first: it differs from the payment screen.
+		if (view.change) showInfo(view.change);
 		showSuccess(view.message);
 	}
 }

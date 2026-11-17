@@ -964,7 +964,11 @@
 								variant="solid"
 								@click="handleErrorRetry"
 							>
-								{{ __("Try Again") }}
+								{{
+									uiStore.errorRetryAction === UA_PRRO_RETRY_ACTION
+										? __("Fiscalize again")
+										: __("Try Again")
+								}}
 							</Button>
 						</div>
 					</div>
@@ -1046,6 +1050,12 @@ import { Button, Dialog, createResource } from "frappe-ui";
 import { call } from "@/utils/apiWrapper";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useToast } from "@/composables/useToast";
+import {
+	UA_PRRO_RETRY_ACTION,
+	describeUaPrro,
+	fiscalizeAgain,
+	getUaPrroBlock,
+} from "@/utils/uaPrro";
 
 import { useCustomerSearchStore } from "@/stores/customerSearch";
 import { useItemSearchStore } from "@/stores/itemSearch";
@@ -1997,9 +2007,32 @@ async function handleDeleteFailedInvoice() {
 	}
 }
 
+// PRRO (ua_prro): the status block of the answer of submit_invoice or of "Fiscalize again" (see utils/uaPrro.js).
+function showUaPrroStatus(result) {
+	const view = describeUaPrro(getUaPrroBlock(result));
+	if (!view) return;
+	if (view.level === "error") {
+		uiStore.showError(
+			view.title,
+			view.message,
+			view.details,
+			view.canRetry ? UA_PRRO_RETRY_ACTION : null,
+			{ invoice: view.invoice }
+		);
+	} else if (view.level === "info") {
+		showWarning(view.message);
+	} else {
+		showSuccess(view.message);
+	}
+}
+
 async function handleErrorRetry() {
+	const retryAction = uiStore.errorRetryAction;
+	const retryData = uiStore.errorRetryActionData;
 	uiStore.clearError();
-	if (uiStore.errorRetryAction === "payment") {
+	if (retryAction === UA_PRRO_RETRY_ACTION) {
+		showUaPrroStatus({ ua_prro: await fiscalizeAgain(call, retryData?.invoice) });
+	} else if (uiStore.errorRetryAction === "payment") {
 		setTimeout(() => {
 			uiStore.showPaymentDialog = true;
 		}, 300);
@@ -2230,6 +2263,9 @@ async function handlePaymentCompleted(paymentData) {
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}
+
+				// PRRO: the receipt was sent after the submit; a failure is not an error of the call.
+				showUaPrroStatus(result);
 			}
 		}
 	} catch (error) {
@@ -2481,6 +2517,8 @@ async function handleLoadDraft(draft) {
 function handleReturnCreated(returnInvoice) {
 	// Success message is already shown by ReturnInvoiceDialog
 	log.debug("Return invoice created:", returnInvoice.name);
+	// PRRO: the return receipt was sent after the submit; a failure is not an error of the call.
+	showUaPrroStatus(returnInvoice);
 }
 
 function handleDiscountApplied(discount) {

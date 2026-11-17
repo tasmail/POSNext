@@ -1513,5 +1513,5 @@
 "The fiscal server did not register the receipt.","Фіскальний сервер не зареєстрував чек.",""
 "The sale {0} is saved.","Продаж {0} збережено.",""
 "Fiscalize again","Фіскалізувати ще раз",""
-"Change to hand over: {0}{1}. Receipt total {2}","Решта до видачі: {0}{1}. Сума чека {2}",""
-" (the payment screen says {0})"," (на екрані оплати: {0})",""
+"Change to hand over: {0} (the payment screen says {1}). Receipt total {2}","Решта до видачі: {0} (на екрані оплати: {1}). Сума чека {2}",""
+"Change to hand over: {0}. Receipt total {1}","Решта до видачі: {0}. Сума чека {1}",""

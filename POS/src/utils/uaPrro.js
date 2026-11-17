@@ -52,15 +52,21 @@ export function describeUaPrro(block) {
 			cash &&
 			(cash.rounded_total !== cash.grand_total || cash.change_amount)
 		) {
-			const screen =
+			const differs =
 				cash.screen_change && cash.screen_change !== cash.change_amount
-					? __(" (the payment screen says {0})", [money(cash.screen_change)])
-					: ""
-			change = __("Change to hand over: {0}{1}. Receipt total {2}", [
-				money(cash.change_amount),
-				screen,
-				money(cash.rounded_total),
-			])
+			change = differs
+				? __(
+						"Change to hand over: {0} (the payment screen says {1}). Receipt total {2}",
+						[
+							money(cash.change_amount),
+							money(cash.screen_change),
+							money(cash.rounded_total),
+						],
+					)
+				: __("Change to hand over: {0}. Receipt total {1}", [
+						money(cash.change_amount),
+						money(cash.rounded_total),
+					])
 		}
 		return { level: "ok", message: parts.join(". "), change, invoice }
 	}

@@ -1195,7 +1195,7 @@
 import { useOfflineStatus } from "@/composables/useOfflineStatus";
 import { useToast } from "@/composables/useToast";
 import { getPaymentIcon } from "@/utils/payment";
-import { getUaPrroCashStep, roundCash } from "@/utils/uaPrro";
+import { getUaPrroCashStep, uaPrroRefundHint } from "@/utils/uaPrro";
 import {
 	DEFAULT_CURRENCY,
 	DEFAULT_LOCALE,
@@ -1666,20 +1666,13 @@ const paymentSelectStyle = {
 // puts the rounded amount into the return. null: nothing differs.
 const uaPrroCashStep = computed(() => getUaPrroCashStep(props.posProfile));
 const uaPrroRefundCash = computed(() => {
-	const step = uaPrroCashStep.value;
-	if (!step || addToCustomerCredit.value || isOriginalCreditSale.value || isPartiallyPaid.value) {
-		return null;
-	}
-	if (refundPayments.value.length !== 1 || returnTotal.value <= 0) return null;
-	const method = paymentMethods.value.find(
-		(m) => m.mode_of_payment === refundPayments.value[0].mode_of_payment
+	if (addToCustomerCredit.value || isOriginalCreditSale.value || isPartiallyPaid.value) return null;
+	return uaPrroRefundHint(
+		props.posProfile,
+		returnTotal.value,
+		refundPayments.value,
+		paymentMethods.value
 	);
-	const isCash =
-		(method?.account_type || "").toLowerCase() === "cash" ||
-		(method?.type || "").toLowerCase() === "cash";
-	if (!isCash) return null;
-	const rounded = roundCash(returnTotal.value, step);
-	return rounded === returnTotal.value ? null : rounded;
 });
 
 const canCreateReturn = computed(() => {

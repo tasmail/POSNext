@@ -18,7 +18,9 @@ const {
 	getUaPrroCashModes,
 	getUaPrroCashStep,
 	mergeRetriedBlock,
+	isCashMode,
 	roundCash,
+	uaPrroRefundHint,
 	setUaPrroConfig,
 	toKopecks,
 } = await import("./uaPrro")
@@ -193,5 +195,38 @@ describe("mergeRetriedBlock", () => {
 			cash: previous.cash,
 			fiscal_number: "9",
 		})
+	})
+})
+
+describe("the cash refund hint of the return dialog", () => {
+	// The rows of the POS Profile that the return dialog has: the mode name only, no type.
+	const methods = [
+		{ mode_of_payment: "Демо готівка", default: 1, allow_in_returns: 1 },
+		{ mode_of_payment: "Демо картка" },
+	]
+	const row = (mode, amount = 12.34) => [{ mode_of_payment: mode, amount }]
+
+	it("rounds a cash refund of a flagged sale (12.34 -> 12.30, 12.35 -> 12.40)", () => {
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.10", cash_modes: ["Демо готівка"] })
+		expect(uaPrroRefundHint("Shop", 12.34, row("Демо готівка"), methods)).toBe(12.3)
+		expect(uaPrroRefundHint("Shop", 12.35, row("Демо готівка"), methods)).toBe(12.4)
+		// Also while the rows of the profile are not loaded yet.
+		expect(uaPrroRefundHint("Shop", 12.34, row("Демо готівка"), [])).toBe(12.3)
+	})
+	it("says nothing when nothing changes, for a card, several rows or another profile", () => {
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.10", cash_modes: ["Демо готівка"] })
+		expect(uaPrroRefundHint("Shop", 12.3, row("Демо готівка"), methods)).toBeNull()
+		expect(uaPrroRefundHint("Shop", 12.34, row("Демо картка"), methods)).toBeNull()
+		expect(
+			uaPrroRefundHint("Shop", 12.34, [...row("Демо готівка"), ...row("Демо готівка")], methods),
+		).toBeNull()
+		expect(uaPrroRefundHint("Shop", 0, row("Демо готівка"), methods)).toBeNull()
+		expect(uaPrroRefundHint("Plain", 12.34, row("Демо готівка"), methods)).toBeNull()
+	})
+	it("uses the step 0.50 and, without the server's list, the type or the name", () => {
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.50" })
+		expect(uaPrroRefundHint("Shop", 12.25, row("Cash"), [{ mode_of_payment: "Cash" }])).toBe(12.5)
+		expect(isCashMode("Shop", { mode_of_payment: "X", type: "Cash" })).toBe(true)
+		expect(isCashMode("Shop", { mode_of_payment: "Демо готівка" })).toBe(false)
 	})
 })

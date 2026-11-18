@@ -905,6 +905,13 @@
 									>
 										{{ formatCurrency(remainingAmount) }}
 									</div>
+									<div
+										v-if="uaPrroShortByRounding"
+										class="mt-1 text-xs font-semibold text-orange-700"
+										data-testid="ua-prro-take"
+									>
+										{{ __("Take {0} (cash total)", [formatCurrency(payableTotal)]) }}
+									</div>
 								</div>
 								<!-- Write-off Applied -->
 								<div
@@ -2722,6 +2729,18 @@ const cashRoundingShown = computed(
 	() => Boolean(uaPrroCashStep.value) && payableTotal.value !== roundCurrency(props.grandTotal)
 );
 
+// An automatic PRRO profile (also when the method is not cash): no write-off control.
+const isUaPrroProfile = computed(() => Boolean(getUaPrroCashStep(props.posProfile)));
+
+// The tender covers the exact total but not the rounded cash total (12.35 for 12.40): say what to take.
+const uaPrroShortByRounding = computed(
+	() =>
+		cashRoundingShown.value &&
+		totalPaid.value > 0 &&
+		totalPaid.value >= roundCurrency(props.grandTotal) &&
+		payableTotal.value > totalPaid.value
+);
+
 const remainingAmount = computed(() => {
 	const remaining = payableTotal.value - totalPaid.value;
 	return remaining > 0 ? roundCurrency(remaining) : 0;
@@ -2739,6 +2758,8 @@ const changeAmount = computed(() => {
 
 // Check if write-off is possible for the current remaining amount
 const canWriteOff = computed(() => {
+	// PRRO: a fiscalized invoice never has a write-off (the app refuses it at submit)
+	if (isUaPrroProfile.value) return false;
 	// Write-off is only possible if:
 	// 1. Write-off is allowed (setting enabled and limit > 0)
 	// 2. There is a remaining amount to write off

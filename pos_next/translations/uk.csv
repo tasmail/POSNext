@@ -1524,3 +1524,4 @@
 "Test receipt","Тестовий чек",""
 "Test receipt, not sent to the tax service","Тестовий чек, до податкової не передається",""
 "The sale {0} is not fiscalized: use Fiscalize on the invoice.","Продаж {0} не фіскалізовано: скористайтеся «Фіскалізувати» в рахунку.",""
+"Take {0} (cash total)","Прийміть {0} (сума готівкою)",""

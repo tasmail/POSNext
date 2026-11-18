@@ -198,6 +198,19 @@ export function getUaPrroCashModes(profile) {
 }
 
 /**
+ * Is a Mode of Payment (an object with `mode_of_payment` and maybe `type` / `account_type`) cash for the rounding:
+ * the server's list of the profile when it sent one, else the type or the name. The rows of the POS Profile that the
+ * return dialog has carry no type, only the mode name: the server's list is what makes them known.
+ */
+export function isCashMode(profile, method) {
+	if (!method) return false
+	const modes = getUaPrroCashModes(profile)
+	if (modes) return modes.includes(method.mode_of_payment)
+	const kind = `${method.account_type || ""} ${method.type || ""}`.toLowerCase()
+	return kind.includes("cash") || (method.mode_of_payment || "").toLowerCase().includes("cash")
+}
+
+/**
  * The total the cashier takes in cash: the exact total rounded by the step of the app for an automatic profile and a
  * cash-only payment, else the total itself. The server stays authoritative.
  */
@@ -225,4 +238,21 @@ export function describeSale(block) {
 		fiscalNumber: block.fiscal_number || "",
 		isFake: Boolean(block.is_fake),
 	}
+}
+
+/**
+ * The cash to hand back for a refund of `returnTotal` through ONE cash payment row, as the receipt of the return will
+ * have it (rounded by the step of the app, half away from zero), or null: not an automatic profile, not one cash row,
+ * or the rounding changes nothing. The row's mode is cash by the server's list; `methods` (the rows of the POS Profile,
+ * maybe with a type) only add what the row itself lacks.
+ */
+export function uaPrroRefundHint(profile, returnTotal, refundPayments, methods) {
+	const step = getUaPrroCashStep(profile)
+	if (!step || !Array.isArray(refundPayments) || refundPayments.length !== 1) return null
+	if (!(returnTotal > 0)) return null
+	const row = refundPayments[0]
+	const known = (methods || []).find((m) => m.mode_of_payment === row.mode_of_payment)
+	if (!isCashMode(profile, { ...known, mode_of_payment: row.mode_of_payment })) return null
+	const rounded = roundCash(returnTotal, step)
+	return rounded === roundCash(returnTotal, null) ? null : rounded
 }

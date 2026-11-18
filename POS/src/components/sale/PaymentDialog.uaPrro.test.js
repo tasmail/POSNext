@@ -190,6 +190,30 @@ describe("PaymentDialog with the cash rounding of an automatic PRRO profile", ()
 		}
 	})
 
+	it("hides the write-off and says what to take when the exact total is tendered", async () => {
+		setUaPrroConfig("Shop", { auto: true, cash_step: "0.10" })
+		const wrapper = await open({ allowWriteOff: true, writeOffLimit: 1 })
+		wrapper.vm.paymentEntries = [{ mode_of_payment: "Cash", amount: 12.35, type: "Cash" }]
+		await wrapper.vm.$nextTick()
+		// Short by the rounding: 0.05 remains, no slider, the amount to take is named.
+		expect(text(wrapper)).toMatch(/Remaining\s*\S*\s*0\.05/)
+		expect(text(wrapper)).not.toContain("Write Off")
+		expect(wrapper.get('[data-testid="ua-prro-take"]').text()).toMatch(/Take .*12\.40/)
+		// The rounded amount completes the sale.
+		wrapper.vm.paymentEntries = [{ mode_of_payment: "Cash", amount: 12.4, type: "Cash" }]
+		await wrapper.vm.$nextTick()
+		expect(text(wrapper)).toContain("Fully Paid")
+		expect(wrapper.find('[data-testid="ua-prro-take"]').exists()).toBe(false)
+	})
+
+	it("keeps the write-off for a profile without automatic fiscalization", async () => {
+		const wrapper = await open({ posProfile: "Plain", allowWriteOff: true, writeOffLimit: 1, grandTotal: 12.35 })
+		wrapper.vm.paymentEntries = [{ mode_of_payment: "Cash", amount: 12.3, type: "Cash" }]
+		await wrapper.vm.$nextTick()
+		expect(text(wrapper)).toContain("Write Off")
+		expect(wrapper.find('[data-testid="ua-prro-take"]').exists()).toBe(false)
+	})
+
 	it("changes nothing for a profile without automatic fiscalization", async () => {
 		const wrapper = await open({ posProfile: "Plain" })
 		expect(wrapper.find('[data-testid="ua-prro-cash-total"]').exists()).toBe(false)

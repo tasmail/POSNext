@@ -11,6 +11,7 @@ import { useStockStore } from "./stock";
 import { usePOSSettingsStore } from "./posSettings";
 import { usePOSShiftStore } from "./posShift";
 import { useRealtimePosProfile } from "@/composables/useRealtimePosProfile";
+import { setUaPrroConfig } from "@/utils/uaPrro";
 
 const log = logger.create("ItemSearch");
 
@@ -2177,6 +2178,9 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 			const data = await call("pos_next.api.pos_profile.get_pos_profile_data", {
 				pos_profile: profile,
 			});
+
+			// PRRO (ua_prro): the cash rounding of an automatic profile, for the payment dialog
+			setUaPrroConfig(profile, data?.ua_prro);
 
 			// Set profile item groups (raw from child table)
 			profileItemGroups.value = data?.pos_profile?.item_groups || [];

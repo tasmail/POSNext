@@ -11,8 +11,14 @@
  * cash: { grand_total, rounded_total, paid_amount, change_amount } for a cash sale (the cash is rounded to 0.10 UAH
  * by the app, POS Next shows the exact total)
  *
+ *
+ * Profile data: `get_pos_profile_data` answers with `ua_prro: { auto: true, cash_step: "0.10" | "0.50", cash_modes: [...] }` for a
+ * profile with automatic fiscalization (and with nothing for any other profile). The payment dialog uses it to show the
+ * cash total as the app rounds it (see roundCash) and the change computed from it before the sale is completed.
+ *
  * Kept as a small separate module so that the patch of the fork stays small and is easy to carry over upstream merges.
  */
+import { ref } from "vue"
 import { parseError } from "@/utils/errorHandler"
 
 // Action name of the error dialog (uiStore.showError) for "Fiscalize again".
@@ -128,5 +134,95 @@ export async function fiscalizeAgain(call, invoice) {
 			...blockFromOutcome({ status: "Not Fiscalized" }, invoice),
 			message: parseError(error).message,
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Cash rounding (the rule of ua_prro: prro_core/money.py round_cash and PRRO Settings "cash_rounding_step")
+// ---------------------------------------------------------------------------------------------------------------------
+
+// The steps the law allows (NBU resolution No. 25 of 15.03.2018: 0.10 UAH, since 2025-10-01 also 0.50 UAH), in kopecks.
+const CASH_STEPS = { "0.10": 10, "0.50": 50 }
+
+/** The amount in whole kopecks (an integer); a float such as 4.35 * 100 = 434.99999999999994 is taken as 435. */
+export function toKopecks(value) {
+	const amount = Number(value)
+	if (!Number.isFinite(amount)) return 0
+	return Math.sign(amount) * Math.round(Math.abs(amount) * 100 + 1e-7)
+}
+
+/**
+ * Round a cash total to the step ("0.10" or "0.50"), exactly as the server does: the nearest multiple, an exact half
+ * goes AWAY from zero (12.35 -> 12.40, -12.35 -> -12.40, 12.25 at 0.50 -> 12.50), the arithmetic in integer kopecks.
+ * An unknown step leaves the amount as it is (to two decimals). Never returns -0.
+ */
+export function roundCash(value, step) {
+	const kopecks = toKopecks(value)
+	const unit = CASH_STEPS[step]
+	if (!unit) return kopecks / 100 || 0
+	const units = Math.floor((2 * Math.abs(kopecks) + unit) / (2 * unit))
+	const rounded = Math.sign(kopecks) * units * unit
+	return rounded / 100 || 0
+}
+
+// What the server said about the POS Profiles of this session: { [profile]: { auto: true, cashStep: "0.10" } }.
+const profileConfig = ref({})
+
+/**
+ * Remember the block `ua_prro` of `get_pos_profile_data` for a profile. Anything but an automatic profile with a known
+ * step (an older app, a site without ua_prro, a profile without the option) clears it: nothing here then acts.
+ */
+export function setUaPrroConfig(profile, block) {
+	if (!profile) return
+	const next = { ...profileConfig.value }
+	if (block && block.auto === true && CASH_STEPS[block.cash_step]) {
+		// cash_modes: the Modes of Payment whose PRRO Payment Form is cash (the server's rule); absent: unknown.
+		const modes = Array.isArray(block.cash_modes)
+			? block.cash_modes.filter((mode) => typeof mode === "string")
+			: null
+		next[profile] = { auto: true, cashStep: block.cash_step, cashModes: modes }
+	} else {
+		delete next[profile]
+	}
+	profileConfig.value = next
+}
+
+/** The cash rounding step ("0.10" | "0.50") of an automatic profile, or null. Reactive. */
+export function getUaPrroCashStep(profile) {
+	return profileConfig.value[profile]?.cashStep || null
+}
+
+/** The Modes of Payment that the server treats as cash for an automatic profile, or null when it did not say. */
+export function getUaPrroCashModes(profile) {
+	return profileConfig.value[profile]?.cashModes || null
+}
+
+/**
+ * The total the cashier takes in cash: the exact total rounded by the step of the app for an automatic profile and a
+ * cash-only payment, else the total itself. The server stays authoritative.
+ */
+export function cashPayableTotal(total, step, isCash) {
+	return step && isCash ? roundCash(total, step) : total
+}
+
+/** The block after "Fiscalize again": the answer of the button has no cash figures, the sale's own stay. */
+export function mergeRetriedBlock(previous, fresh) {
+	return { ...fresh, cash: previous?.cash ?? fresh.cash ?? null }
+}
+
+/**
+ * The sale-complete view of a block: { level: "ok" | "error" | "info", changeAmount, receiptTotal, fiscalNumber, isFake,
+ * title, message, details, canRetry, invoice } or null. The change to hand over is the server's figure (the receipt's).
+ */
+export function describeSale(block) {
+	const view = describeUaPrro(block)
+	if (!view) return null
+	const cash = block.cash
+	return {
+		...view,
+		changeAmount: cash ? Number(cash.change_amount || 0) : null,
+		receiptTotal: cash ? Number(cash.rounded_total) : null,
+		fiscalNumber: block.fiscal_number || "",
+		isFake: Boolean(block.is_fake),
 	}
 }

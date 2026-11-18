@@ -837,6 +837,27 @@
 									>{{ formatCurrency(grandTotal) }}</span
 								>
 							</div>
+							<!-- PRRO (ua_prro): the cash total as the receipt will have it -->
+							<div
+								v-if="cashRoundingShown"
+								class="flex items-center justify-between pt-1"
+								data-testid="ua-prro-cash-total"
+							>
+								<span
+									:class="[
+										'font-semibold text-blue-700 text-start',
+										isCompactMode ? 'text-sm' : 'text-base',
+									]"
+									>{{ __("Cash total (rounded to {0})", [uaPrroCashStep]) }}</span
+								>
+								<span
+									:class="[
+										'font-bold text-blue-700 text-end',
+										dynamicTextSize.grandTotal,
+									]"
+									>{{ formatCurrency(payableTotal) }}</span
+								>
+							</div>
 						</div>
 
 						<!-- Payment Status - Two Equal Halves -->
@@ -2007,6 +2028,7 @@ import {
 	roundCurrency,
 } from "@/utils/currency";
 import { getPaymentIcon } from "@/utils/payment";
+import { cashPayableTotal, getUaPrroCashModes, getUaPrroCashStep } from "@/utils/uaPrro";
 import { offlineWorker } from "@/utils/offline/workerClient";
 import { logger } from "@/utils/logger";
 import { Dialog, createResource, call } from "frappe-ui";
@@ -2663,13 +2685,50 @@ const calculatedAdditionalDiscount = computed(() => {
 	return roundCurrency(localAdditionalDiscount.value);
 });
 
+// PRRO (ua_prro): a profile with automatic fiscalization rounds a CASH sale to the step of the app (0.10 or 0.50,
+// half away from zero), so the cashier takes the rounded total and the change is computed from it. null: no rounding.
+const uaPrroCashStep = computed(() =>
+	props.isOffline || props.targetDoctype === "Sales Order"
+		? null
+		: getUaPrroCashStep(props.posProfile)
+);
+
+// Is this method cash for the rounding: the server's list of cash Modes of Payment when it sent one, else the
+// name/type heuristic of the dialog.
+function isUaPrroCashMethod(method) {
+	if (!method) return false;
+	const modes = getUaPrroCashModes(props.posProfile);
+	return modes ? modes.includes(method.mode_of_payment) : isCashPaymentMethod(method);
+}
+
+// Cash only: the selected method is cash and the entries are all cash. A card chosen after a cash entry makes the
+// sale mixed at once (the rest is paid by the card in the exact amount, no change on a card).
+const isCashOnlySale = computed(() => {
+	if (!lastSelectedMethod.value || !isUaPrroCashMethod(lastSelectedMethod.value)) return false;
+	return paymentEntries.value.every((entry) => {
+		if (entry.is_customer_credit || entry.is_wallet_payment) return false;
+		const method = paymentMethods.value.find((m) => m.mode_of_payment === entry.mode_of_payment);
+		return isUaPrroCashMethod(method);
+	});
+});
+
+// The total to pay: the cash total rounded by the app, else the invoice total.
+const payableTotal = computed(() =>
+	cashPayableTotal(roundCurrency(props.grandTotal), uaPrroCashStep.value, isCashOnlySale.value)
+);
+
+// The rounding shown under the grand total (0 when the total is already a multiple of the step).
+const cashRoundingShown = computed(
+	() => Boolean(uaPrroCashStep.value) && payableTotal.value !== roundCurrency(props.grandTotal)
+);
+
 const remainingAmount = computed(() => {
-	const remaining = roundCurrency(props.grandTotal) - totalPaid.value;
+	const remaining = payableTotal.value - totalPaid.value;
 	return remaining > 0 ? roundCurrency(remaining) : 0;
 });
 
 const changeAmount = computed(() => {
-	const change = totalPaid.value - roundCurrency(props.grandTotal);
+	const change = totalPaid.value - payableTotal.value;
 	return change > 0 ? roundCurrency(change) : 0;
 });
 
@@ -2846,7 +2905,7 @@ const isExactAmountValid = computed(() => {
 	if (hasCashPayment.value && !hasNonCashPayment.value) return true;
 
 	// Non-cash or mixed: total paid must not exceed grand total
-	return totalPaid.value <= roundCurrency(props.grandTotal);
+	return totalPaid.value <= payableTotal.value;
 });
 
 const canComplete = computed(() => {
@@ -2862,7 +2921,7 @@ const canComplete = computed(() => {
 
 	// "Pay on Receivable Account": the chosen account holds the unpaid balance
 	if (selectedReceivableAccount.value && props.allowCreditSale) {
-		return totalPaid.value <= roundCurrency(props.grandTotal) + 0.01;
+		return totalPaid.value <= payableTotal.value + 0.01;
 	}
 
 	// If partial payment is allowed, can complete with any amount > 0
@@ -3131,7 +3190,7 @@ function quickAddPayment(method) {
 			})
 			.reduce((sum, entry) => sum + (entry.amount || 0), 0);
 
-		const maxAllowed = roundCurrency(props.grandTotal) - currentNonCashTotal;
+		const maxAllowed = payableTotal.value - currentNonCashTotal;
 
 		if (maxAllowed <= 0) {
 			showWarning(__("Cannot add more non-cash payments. Use cash for overpayment."));
@@ -3144,7 +3203,7 @@ function quickAddPayment(method) {
 
 	// For mixed payments in exact amount mode, validate total doesn't exceed grand total
 	if (isExactAmountModeActive.value && hasNonCashPayment.value && isCashPaymentMethod(method)) {
-		const maxAllowed = roundCurrency(props.grandTotal) - totalPaid.value;
+		const maxAllowed = payableTotal.value - totalPaid.value;
 		if (maxAllowed <= 0) {
 			showInfo(__("Invoice fully paid. No additional payment needed."));
 			return;
@@ -3272,10 +3331,10 @@ async function addCustomPayment(method, amount) {
 	// For mixed payments in exact amount mode, validate total doesn't exceed grand total
 	if (isExactAmountModeActive.value && hasNonCashPayment.value && isCashPaymentMethod(method)) {
 		const newTotal = totalPaid.value + amt;
-		if (newTotal > roundCurrency(props.grandTotal)) {
+		if (newTotal > payableTotal.value) {
 			showWarning(
 				__("Mixed payment cannot exceed invoice total. Limit: {0}", [
-					formatCurrency(roundCurrency(props.grandTotal) - totalPaid.value),
+					formatCurrency(payableTotal.value - totalPaid.value),
 				])
 			);
 			return;
@@ -3286,7 +3345,7 @@ async function addCustomPayment(method, amount) {
 	// This catches accidental double-adds (e.g., quick amount tap then numpad add)
 	// that would result in giving back excessive change.
 	if (allowsOverpayment.value && isCashPaymentMethod(method)) {
-		const grandTotal = roundCurrency(props.grandTotal);
+		const grandTotal = payableTotal.value;
 		const newTotal = roundCurrency(totalPaid.value + amt);
 		const overpay = newTotal - grandTotal;
 		if (grandTotal > 0 && overpay > 0 && overpay > grandTotal) {
@@ -3395,8 +3454,10 @@ function completePayment() {
 
 	// Partial when the tendered amount (plus write-off) doesn't cover the total.
 	const effectivePaid = totalPaid.value + writeOffAmount.value;
-	const isPartial = effectivePaid < props.grandTotal;
-	const outstanding = isPartial ? roundCurrency(props.grandTotal - effectivePaid) : 0;
+	// PRRO: a cash sale of an automatic profile is complete at the rounded total (no change from nothing).
+	const dueTotal = uaPrroCashStep.value ? payableTotal.value : props.grandTotal;
+	const isPartial = effectivePaid < dueTotal;
+	const outstanding = isPartial ? roundCurrency(dueTotal - effectivePaid) : 0;
 
 	const paymentData = {
 		payments: paymentEntries.value,
